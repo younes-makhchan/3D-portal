@@ -189,18 +189,10 @@
         document.addEventListener('DOMContentLoaded', async () => {
             const room = new Room();
             await room.init('container');
-            const scale=20
-            // Example: Add a 3D shoe
-            await room.addObject('http://localhost:8000/3DModel.glb', {x: 3, y: -10, z: -30}, {x: scale, y: scale, z: scale},{x: 0.4, y: 30, z: -0.2});
 
-            // Example: Add a garden of flowers
-            // for(let i = 0; i < 10; i++) {
-            //     await room.addObject('path/to/flower.glb',
-            //         {x: (Math.random()-0.5)*80, y: -22, z: -10 - Math.random()*40},
-            //         {x: 2, y: 2, z: 2});
-            // }
+            // Create procedural forest
+            room.createProceduralForest(200000);
         });
     </script>
 </body>
-</html>
 </html>

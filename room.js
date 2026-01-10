@@ -105,6 +105,71 @@ class Room {
         return points;
     }
 
+    createProceduralForest(count = 150000) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const color = new THREE.Color();
+
+        for (let i = 0; i < count; i++) {
+            // 1. Create organic "clumping" logic
+            // We use a base position and add "jitter" to create bushes
+            const centerX = (Math.random() - 0.5) * 80;
+            const centerZ = (Math.random() - 0.5) * 60;
+
+            // Use exponential random to make more points near the "center" of a bush
+            const radius = Math.pow(Math.random(), 2) * 10;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+
+            const x = centerX + radius * Math.sin(phi) * Math.cos(theta);
+            const y = (Math.random() * radius) - (this.config.room.height / 4); // Rise from floor
+            const z = centerZ + radius * Math.sin(phi) * Math.sin(theta);
+
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+
+            // 2. Color Logic (Based on Height and Position)
+            if (y < -5) {
+                // Deep Greens for the base/grass
+                color.setHSL(0.3 + Math.random() * 0.1, 0.8, 0.2 + Math.random() * 0.2);
+            } else if (y > 2 && Math.random() > 0.8) {
+                // Random "Flowers" (Pinks, Purples, Yellows)
+                color.setHSL(Math.random(), 1.0, 0.6);
+            } else {
+                // Bright Greens and Cyans for the leaves
+                color.setHSL(0.4 + Math.random() * 0.1, 0.9, 0.4 + Math.random() * 0.3);
+            }
+
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.15,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            sizeAttenuation: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const forest = new THREE.Points(geometry, material);
+        this.scene.add(forest);
+        this.objects.push(forest);
+
+        // Add to UI for scaling
+        this.setupDevUI(forest);
+
+        return forest;
+    }
+
     async init(containerId) {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
