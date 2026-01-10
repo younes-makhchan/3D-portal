@@ -1,3 +1,4 @@
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 const CONFIG = {
     room: {
         width: 80,         // Made slightly wider for that wide-screen look
@@ -15,7 +16,10 @@ const CONFIG = {
         initialZ: 0        // Stand at the "glass" of the monitor
     }
 };
-let scene, camera, renderer, composer, pointLight;
+let scene, camera, renderer, composer, pointLight, faceLandmarker, video;
+let eyePosition = { x: 0, y: 0, z: 60 };
+let monitorWidth = 50;
+let monitorHeight = 30;
 
 function init() {
     scene = new THREE.Scene();
@@ -60,6 +64,9 @@ function init() {
     pointLight.position.set(0, 0, 10);
     scene.add(pointLight);
 
+    video = document.getElementById('webcam');
+    setupTracking();
+
     // 4. Build the Room
     const gridTex = createBorderTexture();
     const { width, height, depth, gridSize } = CONFIG.room;
@@ -102,8 +109,65 @@ function addWall(x, y, z, w, h, rx, ry, rz, repX, repY, baseTex) {
 
 function renderLoop() {
     requestAnimationFrame(renderLoop);
-    // No animations or tracking logic here to keep it stable
+    if (faceLandmarker && video.readyState >= video.HAVE_CURRENT_DATA) {
+        const startTimeMs = performance.now();
+        // Modern detection method
+        const results = faceLandmarker.detectForVideo(video, startTimeMs);
+        onResults(results);
+    }
+    updateCamera();
     composer.render();
+}
+
+function updateCamera() {
+    // Simple parallax: move camera based on eye position
+    camera.position.x = eyePosition.x * 0.1;
+    camera.position.y = eyePosition.y * 0.1;
+    camera.lookAt(0, 0, -CONFIG.room.depth / 2);
+}
+
+async function setupTracking() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        video.play();
+        
+        // Use the imported FilesetResolver
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
+        
+        // Use the imported FaceLandmarker
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+                delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numFaces: 1
+        });
+        
+        console.log("Face Tracking Initialized");
+    } catch (error) {
+        console.error('Error accessing webcam:', error);
+    }
+}
+
+function onResults(results) {
+    if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+        const landmarks = results.faceLandmarks[0];
+        
+        // Landmarks 159 (Left Pupil) and 386 (Right Pupil)
+        const leftEye = landmarks[159];
+        const rightEye = landmarks[386];
+        
+        const normX = (leftEye.x + rightEye.x) / 2;
+        const normY = (leftEye.y + rightEye.y) / 2;
+
+        // Smooth movement logic
+        eyePosition.x += ((normX - 0.5) * monitorWidth - eyePosition.x) * 0.15;
+        eyePosition.y += ((0.5 - normY) * monitorHeight - eyePosition.y) * 0.15;
+    }
 }
 
 function createBorderTexture() {
