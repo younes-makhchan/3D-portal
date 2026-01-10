@@ -61,9 +61,9 @@ window.Garden = class Garden {
             size: 0.06,             // Smaller points prevent the "blob" look
             vertexColors: true,
             transparent: true,
-            opacity: 0.5,           // Allow color mixing and misty appearance
+            opacity: 0.7,           // Increased for shinier appearance
             blending: THREE.AdditiveBlending,
-            depthWrite: false,
+            depthWrite: true,       // Enable depth writing to prevent clipping issues
             sizeAttenuation: true   // Crucial for depth perception
         });
 
@@ -89,9 +89,9 @@ window.Garden = class Garden {
             positions[pIdx + 2] = basePos.z + jitterZ;
 
             // Color: Green gradient, getting lighter towards the top
-            colors[pIdx] = 0.1;
-            colors[pIdx + 1] = 0.5 + (t * 0.3);
-            colors[pIdx + 2] = 0.1;
+            colors[pIdx] = 0.3;
+            colors[pIdx + 1] = 0.7 + (t * 0.3);
+            colors[pIdx + 2] = 0.3;
         }
         return offset;
     }
@@ -363,7 +363,7 @@ window.Garden = class Garden {
             // HSL: 0.25 to 0.35 is the "Green" range with dark baseline
             const hue = 0.25 + (Math.random() * 0.1);
             const saturation = 0.5 + (Math.random() * 0.4);
-            const lightness = 0.1 + (Math.random() * 0.2); // Keep it dark so flowers pop
+            const lightness = 0.3 + (Math.random() * 0.4); // Increased for shinier appearance
 
             color.setHSL(hue, saturation, lightness);
 
@@ -394,7 +394,7 @@ window.Garden = class Garden {
             if (Math.random() > 0.95) {
                 colors[pIdx] = 1.0; colors[pIdx + 1] = 0.5; colors[pIdx + 2] = 1.0; // Magenta flowers
             } else {
-                colors[pIdx] = 0.02; colors[pIdx + 1] = 0.15; colors[pIdx + 2] = 0.05; // Dark green
+                colors[pIdx] = 0.1; colors[pIdx + 1] = 0.3; colors[pIdx + 2] = 0.1; // Brighter green
             }
         }
         return offset + count;
@@ -438,11 +438,11 @@ window.Garden = class Garden {
                                         if (dot(c, c) > 0.25) discard;
                                         vec4 texColor = texture2D(map, vUv);
                                         if (texColor.a < 0.1) discard;
-                                        gl_FragColor = texColor;
+                                        gl_FragColor = texColor * 1.6;
                                     }
                                 `,
                                 transparent: true,
-                                depthWrite: false
+                                depthWrite: true
                             });
 
                             const points = new THREE.Points(child.geometry, material);
@@ -491,7 +491,7 @@ window.Garden = class Garden {
         let offset = 0;
 
         // 1. GRASS MEADOW (Base layer)
-        offset = this.generateGrassMeadow(positions, colors, offset, 200000);
+        offset = this.generateGrassMeadow(positions, colors, offset, 500000);
 
         // 2. PROCEDURAL BUSHES (Fill in areas)
         for (let b = 0; b < 2; b++) {
@@ -506,12 +506,12 @@ window.Garden = class Garden {
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
-            size: 0,
+            size: 0.03,
             vertexColors: true,
             transparent: true,
-            opacity: 0,
+            opacity: 0.3,
             blending: THREE.AdditiveBlending,
-            depthWrite: false,
+            depthWrite: true,
             sizeAttenuation: true
         });
 
@@ -519,36 +519,51 @@ window.Garden = class Garden {
 
         // ADD GLB MODELS AS POINTS
         try {
-            const grassPoints = await this.loadGLBModel('http://localhost:8000/grass.glb', {x: 0, y: -20, z: -35}, {x: 40, y: 30, z: 10},{x: 0.1, y: 0, z: 0},0.08,2000.0);
-            garden.add(grassPoints);
+            //const grassPoints = await this.loadGLBModel('http://localhost:8000/grass.glb', {x: 0, y: -20, z: -35}, {x: 40, y: 30, z: 10},{x: 0.1, y: 0, z: 0},0.02,4000.0);
+            //garden.add(grassPoints);
             // Load flower GLB as points
-            const orangeFlower = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -10, y: -13, z: -30}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
+            const orangeFlower = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -25, y: 15, z: -30}, {x: 10, y: 10, z: 10},{x:0,y:0,z:3},0.03,2000.0);
             garden.add(orangeFlower);
-            const orangeFlower1 = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -0, y: -13, z: -32}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
-            garden.add(orangeFlower1);
+            //const orangeFlower1 = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -8, y: -13, z: -29}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
+            //garden.add(orangeFlower1);
             //const orangeFlower2 = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -20, y: -13, z: -32}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
             //garden.add(orangeFlower2);
             //const redFlower = await this.loadGLBModel('http://localhost:8000/red_flower.glb', {x: -5, y: -13, z: -35}, {x: 20, y: 100, z: 20},{x:0,y:0,z:0},0.03,5000.0);
             //garden.add(redFlower);
-            const whiteFlower1 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: -25, y: -15, z: -28}, {x: 8, y: 8, z: 8},{x:0,y:0,z:0},0.03,2000.0);
+            const whiteFlower1 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: -25, y: -15, z: -28}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.03,4000.0);
             garden.add(whiteFlower1);
-            const whiteFlower2 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: 5, y: -13, z: -23}, {x: 8, y: 8, z: 8},{x:0,y:0,z:0},0.02,2000.0);
+            const whiteFlower2 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: 5, y: -13, z: -23}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
             garden.add(whiteFlower2);
-            const whiteFlower3 = await this.loadGLBModel('http://localhost:8000/white_flower.glb',{ x: 12, y: -13, z: -22}, {x: 8, y: 8, z: 8},{x:0,y:0,z:0},0.02,2000.0);
-            garden.add(whiteFlower3);
-            const whiteFlower4 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: 17, y: -13, z: -32}, {x: 8, y: 8, z: 8},{x:0,y:0,z:0},0.02,2000.0);
+            //const whiteFlower7 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: -3, y: 10, z: -23}, {x: 20, y: 20, z: 20},{x:0,y:0,z:3},0.02,4000.0);
+            //garden.add(whiteFlower7);
+
+            //const whiteFlower3 = await this.loadGLBModel('http://localhost:8000/white_flower.glb',{ x: 12, y: -13, z: -22}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
+            //garden.add(whiteFlower3);
+            const whiteFlower4 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: 17, y: -13, z: -32}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
             garden.add(whiteFlower4);
-            
-            
+ 
+            const whiteFlower5 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: -3, y: -13, z: -35}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
+            garden.add(whiteFlower5);
+            const whiteFlower6 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: -10, y: -13, z: -33}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
+            garden.add(whiteFlower6);
+            const whiteFlower8 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: -2, y: -16, z: -32}, {x: 15, y: 15, z: 15},{x:0,y:0,z:0},0.02,4000.0);
+            garden.add(whiteFlower8);
+            const whiteFlower9 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: -8, y: -16, z: -28}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.02,2000.0);
+            garden.add(whiteFlower9);
             //bush
 
             const pinkBush1 = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: -20, y: -13, z: -30}, {x: 10, y: 10, z: 10});
             garden.add(pinkBush1);
-                
+            const pinkBush2 = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: 0, y: -13, z: -36}, {x: 10, y: 10, z: 10});
+            garden.add(pinkBush2);  
             const pinkBush = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: 20, y: -13, z: -30}, {x: 10, y: 10, z: 10});
             garden.add(pinkBush);
-            const tallBush = await this.loadGLBModel('http://localhost:8000/tall_bush.glb', {x: -4, y: -10, z: -27}, {x: 10, y: 15, z: 10},{x: 0.0, y: 10, z: 0},0.03,2000.0);
+            const desertBush = await this.loadGLBModel('http://localhost:8000/desert_bush.glb', {x: 18, y: -7, z: -36}, {x: 8, y: 8, z: 8},{x: 0.0, y: 0, z: 0},0.02,2000.0);
+            garden.add(desertBush);
+            const tallBush = await this.loadGLBModel('http://localhost:8000/tall_bush.glb', {x: 25, y: -10, z: -27}, {x: 20, y: 20, z: 20},{x: 0.0, y: 10, z: 0},0.03,2000.0);
             garden.add(tallBush);
+            // const tallestBush = await this.loadGLBModel('http://localhost:8000/tallest_bush.glb', {x: -4, y: -10, z: -27}, {x: 15, y: 15, z: 15},{x: 0.0, y: 10, z: 0},0.03,4000.0);
+            //garden.add(tallestBush);
              const redBush = await this.loadGLBModel('http://localhost:8000/red_bush.glb', {x: 5, y: -11.2, z: -27}, {x: 10, y: 10, z: 10},{x: 0.1, y: 10, z: 0},0.03,2000.0);
              garden.add(redBush);
             // const randBush = await this.loadGLBModel('http://localhost:8000/rand_bush.glb', {x: -20, y: -10, z: -35}, {x: 10, y: 10, z: 10});
@@ -560,10 +575,10 @@ window.Garden = class Garden {
             //Tree
             //const treePoints = await this.loadGLBModel('http://localhost:8000/trees.glb', {x: 0, y: -17, z: -35}, {x: 35, y: 35, z: 35},{x: 0, y: 5.5, z: 0});
             //garden.add(treePoints);
-            const simpleTreePoints1 = await this.loadGLBModel('http://localhost:8000/simple_tree.glb', {x: 16, y: 4, z: -35}, {x: 25, y: 25, z: 26},{x: 0, y: 0, z: 0},0.02,10000.0);
+            const simpleTreePoints1 = await this.loadGLBModel('http://localhost:8000/simple_tree.glb', {x: 0, y: 4, z: -35}, {x: 25, y: 25, z: 26},{x: 0, y: 0, z: 0},0.02,10000.0);
             garden.add(simpleTreePoints1);
 
-            const simpleTreePoints = await this.loadGLBModel('http://localhost:8000/simple_tree.glb', {x: -20, y: -5, z: -35}, {x: 20, y: 20, z: 20},{x: 0, y: 5.5, z: 0},0.02,8000.0);
+            const simpleTreePoints = await this.loadGLBModel('http://localhost:8000/simple_tree.glb', {x: -20, y: -5, z: -35}, {x: 20, y: 20, z: 20},{x: 0, y: 5.5, z: 0},0.03,8000.0);
             garden.add(simpleTreePoints);
             console.log('Hybrid garden created with procedural elements + GLB models');
         } catch (error) {

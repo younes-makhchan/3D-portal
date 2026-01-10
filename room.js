@@ -7,8 +7,13 @@ const POINTS_VERTEX_SHADER = `
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
 
-    // perspective-scaled point size
-    gl_PointSize = 0.03 * (2000.0 / -mvPosition.z);
+    float depth = -mvPosition.z;
+    float softness = smoothstep(40.0, 160.0, depth);
+    gl_PointSize = mix(
+      0.045 * (2000.0 / depth),
+      0.08 * (2000.0 / depth),
+      softness
+    );
 
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -19,16 +24,18 @@ const POINTS_FRAGMENT_SHADER = `
   varying vec2 vUv;
 
   void main() {
-    // circular points
     vec2 c = gl_PointCoord - vec2(0.5);
-    if (dot(c, c) > 0.25) discard;
+    float d = dot(c, c) * 4.0; // distance from center
+    float alpha = exp(-d * 1.8); // softness control
+
+    if (alpha < 0.05) discard;
 
     vec4 texColor = texture2D(map, vUv);
 
     // kill transparent texels (leaves clean edges)
     if (texColor.a < 0.1) discard;
 
-    gl_FragColor = texColor;
+    gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
   }
 `;
 
@@ -41,8 +48,8 @@ const CONFIG = {
     },
     visuals: {
         neonColor: 0xffffff,
-        bloomStrength: 0.6,
-        emissiveIntensity: 6, // Crank this up for that bright glow
+        bloomStrength: 0.8,
+        emissiveIntensity: 1, // Reduced to avoid over-shininess on grid
     },
     camera: {
         fov: 60,           // Lower FOV feels more cinematic
@@ -133,19 +140,19 @@ class Room {
 
         const bloomPass = new THREE.UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            this.config.visuals.bloomStrength,
-            0,
-            1
+            1.5, // Stronger bloom for bigger effect
+            1.0, // Larger radius for bigger blur
+            0.8  // Threshold to focus bloom on bright areas
         );
         this.composer.addPass(bloomPass);
 
         // Lighting
-        this.pointLight = new THREE.PointLight(0xffffff, 1.0, 500);
+        this.pointLight = new THREE.PointLight(0xffffff, 2.0, 500);
         this.pointLight.position.set(0, 0, 10);
         this.scene.add(this.pointLight);
 
         this.video = document.getElementById('webcam');
-       // await this.setupTracking();
+       await this.setupTracking();
 
         // Build the Room
         this.buildRoom();
@@ -344,6 +351,11 @@ class Room {
             this.onResults(results);
         }
         this.updateCamera();
+
+        // Small pulse light effect for garden models
+        const time = performance.now() * 0.001;
+        this.pointLight.intensity = 2.0 + Math.sin(time * 2) * 0.2;
+
         this.composer.render();
     }
 
@@ -427,3 +439,4 @@ class Room {
 // Export for use in other files
 console.log("exporting room")
 window.Room = Room;
+// Export for use in other files
