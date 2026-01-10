@@ -8,7 +8,7 @@ const POINTS_VERTEX_SHADER = `
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
 
     // perspective-scaled point size
-    gl_PointSize = 0.3 * (850.0 / -mvPosition.z);
+    gl_PointSize = 0.03 * (2000.0 / -mvPosition.z);
 
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -79,95 +79,26 @@ class Room {
         this.objects = [];
     }
 
-    convertMeshToTexturedPoints(mesh) {
-        if (!mesh.geometry || !mesh.material || !mesh.material.map) return null;
 
-        const texture = mesh.material.map;
-        texture.colorSpace = THREE.SRGBColorSpace;
 
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                map: { value: texture }
-            },
-            vertexShader: POINTS_VERTEX_SHADER,
-            fragmentShader: POINTS_FRAGMENT_SHADER,
-            transparent: true,
-            depthWrite: false
-        });
-
-        const points = new THREE.Points(mesh.geometry, material);
-
-        // preserve transforms
-        points.position.copy(mesh.position);
-        points.rotation.copy(mesh.rotation);
-        points.scale.copy(mesh.scale);
-
-        return points;
+    // Initialize garden system
+    initGarden() {
+        const garden = new Garden();
+        const gardenObject = garden.createMasterGarden();
+        this.scene.add(gardenObject);
+        this.objects.push(gardenObject);
+        this.setupDevUI(gardenObject);
+        return gardenObject;
     }
 
-    createProceduralForest(count = 150000) {
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(count * 3);
-        const colors = new Float32Array(count * 3);
-        const color = new THREE.Color();
-
-        for (let i = 0; i < count; i++) {
-            // 1. Create organic "clumping" logic
-            // We use a base position and add "jitter" to create bushes
-            const centerX = (Math.random() - 0.5) * 80;
-            const centerZ = (Math.random() - 0.5) * 60;
-
-            // Use exponential random to make more points near the "center" of a bush
-            const radius = Math.pow(Math.random(), 2) * 10;
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.random() * Math.PI;
-
-            const x = centerX + radius * Math.sin(phi) * Math.cos(theta);
-            const y = (Math.random() * radius) - (this.config.room.height / 4); // Rise from floor
-            const z = centerZ + radius * Math.sin(phi) * Math.sin(theta);
-
-            positions[i * 3] = x;
-            positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = z;
-
-            // 2. Color Logic (Based on Height and Position)
-            if (y < -5) {
-                // Deep Greens for the base/grass
-                color.setHSL(0.3 + Math.random() * 0.1, 0.8, 0.2 + Math.random() * 0.2);
-            } else if (y > 2 && Math.random() > 0.8) {
-                // Random "Flowers" (Pinks, Purples, Yellows)
-                color.setHSL(Math.random(), 1.0, 0.6);
-            } else {
-                // Bright Greens and Cyans for the leaves
-                color.setHSL(0.4 + Math.random() * 0.1, 0.9, 0.4 + Math.random() * 0.3);
-            }
-
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
-        }
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-        const material = new THREE.PointsMaterial({
-            size: 0.15,
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.8,
-            sizeAttenuation: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-
-        const forest = new THREE.Points(geometry, material);
-        this.scene.add(forest);
-        this.objects.push(forest);
-
-        // Add to UI for scaling
-        this.setupDevUI(forest);
-
-        return forest;
+    // Initialize hybrid garden with GLB models
+    async initHybridGarden() {
+        const garden = new Garden();
+        const gardenObject = await garden.createHybridGarden();
+        this.scene.add(gardenObject);
+        this.objects.push(gardenObject);
+        this.setupDevUI(gardenObject);
+        return gardenObject;
     }
 
     async init(containerId) {
@@ -214,7 +145,7 @@ class Room {
         this.scene.add(this.pointLight);
 
         this.video = document.getElementById('webcam');
-        await this.setupTracking();
+       // await this.setupTracking();
 
         // Build the Room
         this.buildRoom();
@@ -300,6 +231,32 @@ class Room {
         });
     }
 
+    convertMeshToTexturedPoints(mesh) {
+        if (!mesh.geometry || !mesh.material || !mesh.material.map) return null;
+
+        const texture = mesh.material.map;
+        texture.colorSpace = THREE.SRGBColorSpace;
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: texture }
+            },
+            vertexShader: POINTS_VERTEX_SHADER,
+            fragmentShader: POINTS_FRAGMENT_SHADER,
+            transparent: true,
+            depthWrite: false
+        });
+
+        const points = new THREE.Points(mesh.geometry, material);
+
+        // preserve transforms
+        points.position.copy(mesh.position);
+        points.rotation.copy(mesh.rotation);
+        points.scale.copy(mesh.scale);
+
+        return points;
+    }
+
     async addObject(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0}) {
         return new Promise((resolve, reject) => {
             this.gltfLoader.load(
@@ -329,6 +286,50 @@ class Room {
                 undefined,
                 (error) => {
                     console.error('Error loading GLTF:', error);
+                    reject(error);
+                }
+            );
+        });
+    }
+
+    async loadGLBAsPoints(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0}) {
+        return new Promise((resolve, reject) => {
+            this.gltfLoader.load(
+                url,
+                (gltf) => {
+                    const root = new THREE.Group();
+                    let meshCount = 0;
+
+                    gltf.scene.traverse((child) => {
+                        if (child.isMesh && child.material && child.material.map) {
+                            const points = this.convertMeshToTexturedPoints(child);
+                            if (points) {
+                                root.add(points);
+                                meshCount++;
+                            }
+                        }
+                    });
+
+                    if (meshCount === 0) {
+                        console.warn(`No textured meshes found in ${url}`);
+                    }
+
+                    root.position.set(position.x, position.y, position.z);
+                    root.scale.set(scale.x, scale.y, scale.z);
+                    root.rotation.set(rotation.x, rotation.y, rotation.z);
+
+                    this.scene.add(root);
+                    this.objects.push(root);
+                    this.setupDevUI(root);
+
+                    console.log(`Loaded ${url} as ${meshCount} point clouds`);
+                    resolve(root);
+                },
+                (progress) => {
+                    console.log(`Loading ${url}: ${(progress.loaded / progress.total * 100)}%`);
+                },
+                (error) => {
+                    console.error(`Error loading GLB ${url}:`, error);
                     reject(error);
                 }
             );
