@@ -1,15 +1,15 @@
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 const CONFIG = {
     room: {
-        width: 90,         // Made slightly wider for that wide-screen look
-        height: 50,
-        depth: 68,        // Deep tunnel
-        gridSize: 5,       // Larger number = more spacing between lines
+        width: 90,         // 18 * 5 = perfect grid
+        height: 45,        // 9 * 5 = perfect grid
+        depth: 70,         // 14 * 5 = perfect grid, no gaps
+        gridSize: 7,       // Grid spacing
     },
     visuals: {
         neonColor: 0xffffff,
-        bloomStrength: 0.5,
-        emissiveIntensity: 3, // Crank this up for that bright glow
+        bloomStrength: 0.6,
+        emissiveIntensity: 4, // Crank this up for that bright glow
     },
     camera: {
         fov: 60,           // Lower FOV feels more cinematic
@@ -17,12 +17,12 @@ const CONFIG = {
     },
     motion: {
         enabled: true,      // Enable/disable motion tracking
-        parallaxFactor: 0.3, // Multiplier for camera movement based on eye position
-        smoothing: 0.15    // Smoothing factor for eye position updates (0-1, lower = smoother)
+        parallaxFactor: 0.25, // Multiplier for camera movement based on eye position
+        smoothing: 0.4    // Smoothing factor for eye position updates (0-1, lower = smoother)
     },
     monitor: {
-        width: 30.66,          // Monitor width for tracking calculations
-        height: 19.16          // Monitor height for tracking calculations
+        width: 32,          // Monitor width for tracking calculations
+        height: 20          // Monitor height for tracking calculations
     },
     tracking: {
         sensitivity: 4.0   // Sensitivity multiplier for eye tracking
@@ -179,7 +179,7 @@ function onResults(results) {
         const normY = (leftEye.y + rightEye.y) / 2;
 
         // Smooth movement logic with configurable sensitivity and smoothing
-        eyePosition.x += ((normX - 0.5) * monitorWidth * CONFIG.tracking.sensitivity - eyePosition.x) * CONFIG.motion.smoothing;
+        eyePosition.x += ((0.5 - normX) * monitorWidth * CONFIG.tracking.sensitivity - eyePosition.x) * CONFIG.motion.smoothing;
         eyePosition.y += ((0.5 - normY) * monitorHeight * CONFIG.tracking.sensitivity - eyePosition.y) * CONFIG.motion.smoothing;
     }
 }
@@ -194,10 +194,21 @@ function createBorderTexture() {
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, 256, 256);
 
-    // 2. White Grid Lines (These will become your neon lines)
+    // 2. White Grid Lines (rectangular cells)
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 4; // Tweak this to make lines thicker/thinner
-    ctx.strokeRect(0, 0, 256, 256); 
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const spacingX = 256; // Wider horizontal spacing for rectangular cells
+    const spacingY = spacingX /2 ; // Narrower vertical spacing
+    for (let x = 0; x <= 256; x += spacingX) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 256);
+    }
+    for (let y = 0; y <= 256; y += spacingY) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(256, y);
+    }
+    ctx.stroke();
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.magFilter = THREE.NearestFilter; // Keeps lines from getting blurry
