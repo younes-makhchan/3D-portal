@@ -6,9 +6,9 @@ const CONFIG = {
         gridSize: 5,       // Larger number = more spacing between lines
     },
     visuals: {
-        neonColor: 0x00ffff,
-        bloomStrength: 1.5,
-        emissiveIntensity: 10, // Crank this up for that bright glow
+        neonColor: 0xffffff,
+        bloomStrength: 0.5,
+        emissiveIntensity: 3, // Crank this up for that bright glow
     },
     camera: {
         fov: 60,           // Lower FOV feels more cinematic
@@ -26,19 +26,32 @@ function init() {
     camera.position.set(0, 0, CONFIG.camera.initialZ);
 
     // 2. Renderer & Post-Processing (The Neon Glow)
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance" 
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputEncoding = THREE.sRGBEncoding;
     document.getElementById('container').appendChild(renderer.domElement);
 
-    composer = new THREE.EffectComposer(renderer);
+    const renderTarget = new THREE.WebGLRenderTarget(
+        window.innerWidth, 
+        window.innerHeight, 
+        {
+            type: THREE.FloatType, // This is the secret for bloom!
+            format: THREE.RGBAFormat,
+            encoding: THREE.sRGBEncoding
+        }
+    );
+    composer = new THREE.EffectComposer(renderer,renderTarget);
     composer.addPass(new THREE.RenderPass(scene, camera));
 
     const bloomPass = new THREE.UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
         CONFIG.visuals.bloomStrength,
-        0.4,
-        0.85
+        0,
+        1
     );
     composer.addPass(bloomPass);
 
