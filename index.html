@@ -101,6 +101,30 @@
 </head>
 <body>
 
+    <div id="dev-ui" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 15px; z-index: 9999; font-family: sans-serif; display: none;">
+        <h4 style="margin-bottom:10px; border-bottom: 1px solid #555;">Object Dev Tools</h4>
+
+        <label>X Position</label><br>
+        <input type="range" id="ui-x" min="-100" max="100" step="0.5" style="width:150px"><br>
+
+        <label>Y Position</label><br>
+        <input type="range" id="ui-y" min="-60" max="60" step="0.5" style="width:150px"><br>
+
+        <label>Z Position</label><br>
+        <input type="range" id="ui-z" min="-200" max="0" step="0.5" style="width:150px"><br>
+
+        <hr style="margin:10px 0">
+
+        <label>Rotation Y</label><br>
+        <input type="range" id="ui-rotY" min="0" max="6.28" step="0.01" style="width:150px"><br>
+
+        <label>Scale</label><br>
+        <input type="range" id="ui-scale" min="1" max="100" step="0.5" style="width:150px"><br>
+
+        <button id="ui-copy" style="margin-top:10px; cursor:pointer;">Copy Config to Console</button>
+        <p style="font-size: 10px; margin-top: 5px; color: #aaa;">Press 'H' to toggle UI</p>
+    </div>
+
     <div id="container">
 
     <!-- Calibration Overlay -->
@@ -157,7 +181,26 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script type="module" src="main.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <script type="module" src="room.js"></script>
+    <script>
+        // Initialize the room display system
+        document.addEventListener('DOMContentLoaded', async () => {
+            const room = new Room();
+            await room.init('container');
+            const scale=20
+            // Example: Add a 3D shoe
+            await room.addObject('http://localhost:8000/3DModel.glb', {x: 3, y: -10, z: -30}, {x: scale, y: scale, z: scale},{x: 0.4, y: 30, z: -0.2});
+
+            // Example: Add a garden of flowers
+            // for(let i = 0; i < 10; i++) {
+            //     await room.addObject('path/to/flower.glb',
+            //         {x: (Math.random()-0.5)*80, y: -22, z: -10 - Math.random()*40},
+            //         {x: 2, y: 2, z: 2});
+            // }
+        });
+    </script>
 </body>
 </html>
 </html>
