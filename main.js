@@ -1,9 +1,9 @@
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 const CONFIG = {
     room: {
-        width: 80,         // Made slightly wider for that wide-screen look
+        width: 90,         // Made slightly wider for that wide-screen look
         height: 50,
-        depth: 65,        // Deep tunnel
+        depth: 68,        // Deep tunnel
         gridSize: 5,       // Larger number = more spacing between lines
     },
     visuals: {
@@ -14,12 +14,24 @@ const CONFIG = {
     camera: {
         fov: 60,           // Lower FOV feels more cinematic
         initialZ: 0        // Stand at the "glass" of the monitor
+    },
+    motion: {
+        enabled: true,      // Enable/disable motion tracking
+        parallaxFactor: 0.3, // Multiplier for camera movement based on eye position
+        smoothing: 0.15    // Smoothing factor for eye position updates (0-1, lower = smoother)
+    },
+    monitor: {
+        width: 30.66,          // Monitor width for tracking calculations
+        height: 19.16          // Monitor height for tracking calculations
+    },
+    tracking: {
+        sensitivity: 4.0   // Sensitivity multiplier for eye tracking
     }
 };
 let scene, camera, renderer, composer, pointLight, faceLandmarker, video;
 let eyePosition = { x: 0, y: 0, z: 60 };
-let monitorWidth = 50;
-let monitorHeight = 30;
+let monitorWidth = CONFIG.monitor.width;
+let monitorHeight = CONFIG.monitor.height;
 
 function init() {
     scene = new THREE.Scene();
@@ -121,8 +133,10 @@ function renderLoop() {
 
 function updateCamera() {
     // Simple parallax: move camera based on eye position
-    camera.position.x = eyePosition.x * 0.1;
-    camera.position.y = eyePosition.y * 0.1;
+    if (CONFIG.motion.enabled) {
+        camera.position.x = eyePosition.x * CONFIG.motion.parallaxFactor;
+        camera.position.y = eyePosition.y * CONFIG.motion.parallaxFactor;
+    }
     camera.lookAt(0, 0, -CONFIG.room.depth / 2);
 }
 
@@ -156,17 +170,17 @@ async function setupTracking() {
 function onResults(results) {
     if (results.faceLandmarks && results.faceLandmarks.length > 0) {
         const landmarks = results.faceLandmarks[0];
-        
+
         // Landmarks 159 (Left Pupil) and 386 (Right Pupil)
         const leftEye = landmarks[159];
         const rightEye = landmarks[386];
-        
+
         const normX = (leftEye.x + rightEye.x) / 2;
         const normY = (leftEye.y + rightEye.y) / 2;
 
-        // Smooth movement logic
-        eyePosition.x += ((normX - 0.5) * monitorWidth - eyePosition.x) * 0.15;
-        eyePosition.y += ((0.5 - normY) * monitorHeight - eyePosition.y) * 0.15;
+        // Smooth movement logic with configurable sensitivity and smoothing
+        eyePosition.x += ((normX - 0.5) * monitorWidth * CONFIG.tracking.sensitivity - eyePosition.x) * CONFIG.motion.smoothing;
+        eyePosition.y += ((0.5 - normY) * monitorHeight * CONFIG.tracking.sensitivity - eyePosition.y) * CONFIG.motion.smoothing;
     }
 }
 
