@@ -2,6 +2,8 @@
 window.Garden = class Garden {
     constructor() {
         this.objects = [];
+        // Use global cache for GLB models
+        if (!window.globalLoadedModels) window.globalLoadedModels = new Map();
     }
 
     createMasterGarden() {
@@ -403,81 +405,92 @@ window.Garden = class Garden {
     // --- LOAD GLB MODEL AS TEXTURED POINTS ---
     async loadGLBModel(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0},pointSize=0.02,pointMany=2000.0) {
         return new Promise((resolve, reject) => {
-            const loader = new THREE.GLTFLoader();
-
-            loader.load(
-                url,
-                (gltf) => {
-                    const root = new THREE.Group();
-                    let meshCount = 0;
-
-                    gltf.scene.traverse((child) => {
-                        if (child.isMesh && child.material && child.material.map) {
-                            // Convert mesh to textured points using the shader
-                            const texture = child.material.map;
-                            texture.colorSpace = THREE.SRGBColorSpace;
-                            console.log(pointSize,pointMany)
-                            const material = new THREE.ShaderMaterial({
-                                uniforms: {
-                                    map: { value: texture }
-                                },
-                                vertexShader: `
-                                    varying vec2 vUv;
-                                    void main() {
-                                        vUv = uv;
-                                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                                        gl_PointSize =${''+pointSize} * (${''+pointMany+".0"} / -mvPosition.z);
-                                        gl_Position = projectionMatrix * mvPosition;
-                                    }
-                                `,
-                                fragmentShader: `
-                                    uniform sampler2D map;
-                                    varying vec2 vUv;
-                                    void main() {
-                                        vec2 c = gl_PointCoord - vec2(0.5);
-                                        if (dot(c, c) > 0.25) discard;
-                                        vec4 texColor = texture2D(map, vUv);
-                                        if (texColor.a < 0.1) discard;
-                                        gl_FragColor = texColor * 1.7;
-                                    }
-                                `,
-                                transparent: true,
-                                depthWrite: true
-                            });
-
-                            const points = new THREE.Points(child.geometry, material);
-
-                            // Preserve mesh transforms
-                            points.position.copy(child.position);
-                            points.rotation.copy(child.rotation);
-                            points.scale.copy(child.scale);
-
-                            root.add(points);
-                            meshCount++;
-                        }
-                    });
-
-                    if (meshCount === 0) {
-                        console.warn(`No textured meshes found in ${url}`);
+            if (window.globalLoadedModels.has(url)) {
+                // Use cached model
+                const cached = window.globalLoadedModels.get(url);
+                this.createPointCloudGroup(cached, position, scale, rotation, pointSize, pointMany, resolve, url);
+            } else {
+                // Load new model
+                const loader = new THREE.GLTFLoader();
+                loader.load(
+                    url,
+                    (gltf) => {
+                        window.globalLoadedModels.set(url, gltf);
+                        this.createPointCloudGroup(gltf, position, scale, rotation, pointSize, pointMany, resolve, url);
+                    },
+                    (progress) => {
+                        console.log(`Loading ${url}: ${(progress.loaded / progress.total * 100)}%`);
+                    },
+                    (error) => {
+                        console.error(`Error loading GLB ${url}:`, error);
+                        reject(error);
                     }
-
-                    // Apply root transforms
-                    root.position.set(position.x, position.y, position.z);
-                    root.scale.set(scale.x, scale.y, scale.z);
-                    root.rotation.set(rotation.x, rotation.y, rotation.z);
-
-                    console.log(`Loaded ${url} as ${meshCount} textured point clouds`);
-                    resolve(root);
-                },
-                (progress) => {
-                    console.log(`Loading ${url}: ${(progress.loaded / progress.total * 100)}%`);
-                },
-                (error) => {
-                    console.error(`Error loading GLB ${url}:`, error);
-                    reject(error);
-                }
-            );
+                );
+            }
         });
+    }
+
+    createPointCloudGroup(gltf, position, scale, rotation, pointSize, pointMany, resolve, url) {
+        const root = new THREE.Group();
+        let meshCount = 0;
+
+        gltf.scene.traverse((child) => {
+            if (child.isMesh && child.material && child.material.map) {
+                // Convert mesh to textured points using the shader
+                const texture = child.material.map;
+                texture.colorSpace = THREE.SRGBColorSpace;
+                console.log(pointSize, pointMany);
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        map: { value: texture }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize =${''+pointSize} * (${''+pointMany+".0"} / -mvPosition.z);
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D map;
+                        varying vec2 vUv;
+                        void main() {
+                            vec2 c = gl_PointCoord - vec2(0.5);
+                            if (dot(c, c) > 0.25) discard;
+                            vec4 texColor = texture2D(map, vUv);
+                            if (texColor.a < 0.1) discard;
+                            gl_FragColor = texColor * 1.6;
+                        }
+                    `,
+                    transparent: true,
+                    depthWrite: true
+                });
+
+                const points = new THREE.Points(child.geometry, material);
+
+                // Preserve mesh transforms
+                points.position.copy(child.position);
+                points.rotation.copy(child.rotation);
+                points.scale.copy(child.scale);
+
+                root.add(points);
+                meshCount++;
+            }
+        });
+
+        if (meshCount === 0) {
+            console.warn(`No textured meshes found in ${url}`);
+        }
+
+        // Apply root transforms
+        root.position.set(position.x, position.y, position.z);
+        root.scale.set(scale.x, scale.y, scale.z);
+        root.rotation.set(rotation.x, rotation.y, rotation.z);
+
+        console.log(`Loaded ${url} from cache as ${meshCount} textured point clouds`);
+        resolve(root);
     }
 
     // --- HYBRID GARDEN: PROCEDURAL + GLB MODELS ---
@@ -519,26 +532,13 @@ window.Garden = class Garden {
 
         // ADD GLB MODELS AS POINTS
         try {
-            //const grassPoints = await this.loadGLBModel('http://localhost:8000/grass.glb', {x: 0, y: -20, z: -35}, {x: 40, y: 30, z: 10},{x: 0.1, y: 0, z: 0},0.02,4000.0);
-            //garden.add(grassPoints);
+           
             // Load flower GLB as points
-            const orangeFlower = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -25, y: 15, z: -30}, {x: 10, y: 10, z: 10},{x:0,y:0,z:3},0.03,2000.0);
-            garden.add(orangeFlower);
-            //const orangeFlower1 = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -8, y: -13, z: -29}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
-            //garden.add(orangeFlower1);
-            //const orangeFlower2 = await this.loadGLBModel('http://localhost:8000/flower.glb', {x: -20, y: -13, z: -32}, {x: 10, y: 10, z: 10},{x:0,y:0,z:0},0.03,2000.0);
-            //garden.add(orangeFlower2);
-            //const redFlower = await this.loadGLBModel('http://localhost:8000/red_flower.glb', {x: -5, y: -13, z: -35}, {x: 20, y: 100, z: 20},{x:0,y:0,z:0},0.03,5000.0);
-            //garden.add(redFlower);
+           
             const whiteFlower1 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: -25, y: -15, z: -28}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.03,4000.0);
             garden.add(whiteFlower1);
             const whiteFlower2 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: 5, y: -13, z: -23}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
             garden.add(whiteFlower2);
-            //const whiteFlower7 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', {x: -3, y: 10, z: -23}, {x: 20, y: 20, z: 20},{x:0,y:0,z:3},0.02,4000.0);
-            //garden.add(whiteFlower7);
-
-            //const whiteFlower3 = await this.loadGLBModel('http://localhost:8000/white_flower.glb',{ x: 12, y: -13, z: -22}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
-            //garden.add(whiteFlower3);
             const whiteFlower4 = await this.loadGLBModel('http://localhost:8000/white_flower.glb', { x: 17, y: -13, z: -32}, {x: 20, y: 20, z: 20},{x:0,y:0,z:0},0.02,4000.0);
             garden.add(whiteFlower4);
  
@@ -562,19 +562,10 @@ window.Garden = class Garden {
             garden.add(desertBush);
             const tallBush = await this.loadGLBModel('http://localhost:8000/tall_bush.glb', {x: 25, y: -10, z: -27}, {x: 20, y: 20, z: 20},{x: 0.0, y: 10, z: 0},0.03,2000.0);
             garden.add(tallBush);
-            // const tallestBush = await this.loadGLBModel('http://localhost:8000/tallest_bush.glb', {x: -4, y: -10, z: -27}, {x: 15, y: 15, z: 15},{x: 0.0, y: 10, z: 0},0.03,4000.0);
-            //garden.add(tallestBush);
+
              const redBush = await this.loadGLBModel('http://localhost:8000/red_bush.glb', {x: 5, y: -11.2, z: -27}, {x: 10, y: 10, z: 10},{x: 0.1, y: 10, z: 0},0.03,2000.0);
              garden.add(redBush);
-            // const randBush = await this.loadGLBModel('http://localhost:8000/rand_bush.glb', {x: -20, y: -10, z: -35}, {x: 10, y: 10, z: 10});
-            // garden.add(randBush)
-            // const smallBush = await this.loadGLBModel('http://localhost:8000/small_bush.glb', {x: -10, y: -10, z: -35}, {x: 10, y: 10, z: 10});
-            // garden.add(smallBush) 
-            // Load tree GLB as points
-            
-            //Tree
-            //const treePoints = await this.loadGLBModel('http://localhost:8000/trees.glb', {x: 0, y: -17, z: -35}, {x: 35, y: 35, z: 35},{x: 0, y: 5.5, z: 0});
-            //garden.add(treePoints);
+ 
             const simpleTreePoints1 = await this.loadGLBModel('http://localhost:8000/simple_tree.glb', {x: 0, y: 4, z: -35}, {x: 25, y: 25, z: 26},{x: 0, y: 0, z: 0},0.02,10000.0);
             garden.add(simpleTreePoints1);
 

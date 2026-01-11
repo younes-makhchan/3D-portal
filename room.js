@@ -1,43 +1,6 @@
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
-const POINTS_VERTEX_SHADER = `
-  varying vec2 vUv;
 
-  void main() {
-    vUv = uv;
 
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-
-    float depth = -mvPosition.z;
-    float softness = smoothstep(40.0, 160.0, depth);
-    gl_PointSize = mix(
-      0.045 * (2000.0 / depth),
-      0.08 * (2000.0 / depth),
-      softness
-    );
-
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-const POINTS_FRAGMENT_SHADER = `
-  uniform sampler2D map;
-  varying vec2 vUv;
-
-  void main() {
-    vec2 c = gl_PointCoord - vec2(0.5);
-    float d = dot(c, c) * 4.0; // distance from center
-    float alpha = exp(-d * 1.8); // softness control
-
-    if (alpha < 0.05) discard;
-
-    vec4 texColor = texture2D(map, vUv);
-
-    // kill transparent texels (leaves clean edges)
-    if (texColor.a < 0.1) discard;
-
-    gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
-  }
-`;
 
 const CONFIG = {
     room: {
@@ -65,7 +28,7 @@ const CONFIG = {
         height: 20          // Monitor height for tracking calculations
     },
     tracking: {
-        sensitivity: 4.0   // Sensitivity multiplier for eye tracking
+        sensitivity: 12.0   // Sensitivity multiplier for eye tracking
     }
 };
 
@@ -76,6 +39,8 @@ class Room {
         this.camera = null;
         this.renderer = null;
         this.composer = null;
+        this.ambientLight = null;
+        this.hemisphereLight = null;
         this.pointLight = null;
         this.faceLandmarker = null;
         this.video = null;
@@ -83,7 +48,18 @@ class Room {
         this.monitorWidth = config.monitor.width;
         this.monitorHeight = config.monitor.height;
         this.gltfLoader = new THREE.GLTFLoader();
-        this.objects = [];
+        // Global cache for all GLB models across scenes
+        if (!window.globalLoadedModels) window.globalLoadedModels = new Map();
+        this.objects = []; // Keep for backward compatibility, but scenes manage their own objects
+        this.currentScene = 1;
+        this.currentSceneInstance = null;
+
+        // Dynamic effects
+        this.pulseRadius = 0;
+        this.fireflies = null;
+        this.fireflyGeometry = null;
+        this.fireflyMaterial = null;
+        this.globalTime = 0;
     }
 
 
@@ -127,6 +103,7 @@ class Room {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.toneMapping = THREE.NoToneMapping;
         this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.getElementById(containerId).appendChild(this.renderer.domElement);
 
         const renderTarget = new THREE.WebGLRenderTarget(
@@ -158,7 +135,13 @@ class Room {
         this.composer.addPass(bokehPass);
 
         // Lighting
-        this.pointLight = new THREE.PointLight(0xffffff, 2.0, 500);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(this.ambientLight);
+
+        this.hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
+        this.scene.add(this.hemisphereLight);
+
+        this.pointLight = new THREE.PointLight(0xffffff, 3.0, 800);
         this.pointLight.position.set(0, 0, 10);
         this.scene.add(this.pointLight);
 
@@ -167,6 +150,12 @@ class Room {
 
         // Build the Room
         this.buildRoom();
+
+        // Setup scene buttons
+        this.setupSceneButtons();
+
+        // Load initial scene
+        await this.switchScene(1);
 
         this.renderLoop();
     }
@@ -215,14 +204,16 @@ class Room {
 
         const get = (id) => document.getElementById(id);
 
-        // Initial Values
+        // Initial Values for Object Controls
         get('ui-x').value = object.position.x;
         get('ui-y').value = object.position.y;
         get('ui-z').value = object.position.z;
         get('ui-rotY').value = object.rotation.y;
         get('ui-scale').value = object.scale.x;
 
-        // Event Listeners
+
+
+        // Event Listeners for Object Controls
         get('ui-x').oninput = (e) => object.position.x = parseFloat(e.target.value);
         get('ui-y').oninput = (e) => object.position.y = parseFloat(e.target.value);
         get('ui-z').oninput = (e) => object.position.z = parseFloat(e.target.value);
@@ -231,6 +222,8 @@ class Room {
             const s = parseFloat(e.target.value);
             object.scale.set(s, s, s);
         };
+
+
 
         // Helper: Print to console so you can save your favorite position
         get('ui-copy').onclick = () => {
@@ -249,119 +242,127 @@ class Room {
         });
     }
 
-    convertMeshToTexturedPoints(mesh) {
-        if (!mesh.geometry || !mesh.material || !mesh.material.map) return null;
-
-        const texture = mesh.material.map;
-        texture.colorSpace = THREE.SRGBColorSpace;
-
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                map: { value: texture }
-            },
-            vertexShader: POINTS_VERTEX_SHADER,
-            fragmentShader: POINTS_FRAGMENT_SHADER,
-            transparent: true,
-            depthWrite: false
-        });
-
-        const points = new THREE.Points(mesh.geometry, material);
-
-        // preserve transforms
-        points.position.copy(mesh.position);
-        points.rotation.copy(mesh.rotation);
-        points.scale.copy(mesh.scale);
-
-        return points;
-    }
-
-    async addObject(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0}) {
+    async loadGLBNormal(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0}) {
         return new Promise((resolve, reject) => {
-            this.gltfLoader.load(
-                url,
-                (gltf) => {
-                    const root = new THREE.Group();
+            if (window.globalLoadedModels.has(url)) {
+                // Use cached model
+                const cached = window.globalLoadedModels.get(url);
+                const model = cached.scene.clone();
 
-                    gltf.scene.traverse((child) => {
-                        if (child.isMesh) {
-                            const points = this.convertMeshToTexturedPoints(child);
+                model.position.set(position.x, position.y, position.z);
+                model.scale.set(scale.x, scale.y, scale.z);
+                model.rotation.set(rotation.x, rotation.y, rotation.z);
 
-                            if (points) {
-                                root.add(points);
+                // Ensure materials work properly with lighting
+                model.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                            child.material.needsUpdate = true;
+                            if (child.material.map && child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
+                                child.material.color.setRGB(1, 1, 1);
                             }
                         }
-                    });
-
-                    root.position.set(position.x, position.y, position.z);
-                    root.scale.set(scale.x, scale.y, scale.z);
-                    root.rotation.set(rotation.x, rotation.y, rotation.z);
-
-                    this.scene.add(root);
-                    this.objects.push(root);
-                    this.setupDevUI(root);
-                    resolve(root);
-                },
-                undefined,
-                (error) => {
-                    console.error('Error loading GLTF:', error);
-                    reject(error);
-                }
-            );
-        });
-    }
-
-    async loadGLBAsPoints(url, position = {x:0,y:0,z:0}, scale = {x:1,y:1,z:1}, rotation = {x:0,y:0,z:0}) {
-        return new Promise((resolve, reject) => {
-            this.gltfLoader.load(
-                url,
-                (gltf) => {
-                    const root = new THREE.Group();
-                    let meshCount = 0;
-
-                    gltf.scene.traverse((child) => {
-                        if (child.isMesh && child.material && child.material.map) {
-                            const points = this.convertMeshToTexturedPoints(child);
-                            if (points) {
-                                root.add(points);
-                                meshCount++;
-                            }
-                        }
-                    });
-
-                    if (meshCount === 0) {
-                        console.warn(`No textured meshes found in ${url}`);
                     }
+                });
 
-                    root.position.set(position.x, position.y, position.z);
-                    root.scale.set(scale.x, scale.y, scale.z);
-                    root.rotation.set(rotation.x, rotation.y, rotation.z);
+                this.scene.add(model);
+                this.objects.push(model);
+                this.setupDevUI(model);
 
-                    this.scene.add(root);
-                    this.objects.push(root);
-                    this.setupDevUI(root);
-
-                    console.log(`Loaded ${url} as ${meshCount} point clouds`);
-                    resolve(root);
-                },
-                (progress) => {
-                    console.log(`Loading ${url}: ${(progress.loaded / progress.total * 100)}%`);
-                },
-                (error) => {
-                    console.error(`Error loading GLB ${url}:`, error);
-                    reject(error);
+                let mixer = null;
+                if (cached.animations && cached.animations.length > 0) {
+                    mixer = new THREE.AnimationMixer(model);
+                    cached.animations.forEach((clip) => {
+                        const action = mixer.clipAction(clip);
+                        action.loop = THREE.LoopPingPong;
+                        action.timeScale = 0.8;
+                        action.play();
+                    });
+                    this.animationMixers = this.animationMixers || [];
+                    this.animationMixers.push(mixer);
+                    console.log(`Loaded ${url} from cache with ${cached.animations.length} animations`);
+                } else {
+                    console.log(`Loaded ${url} from cache as static mesh`);
                 }
-            );
+
+                resolve({ model, mixer });
+            } else {
+                // Load new model
+                this.gltfLoader.load(
+                    url,
+                    (gltf) => {
+                        window.globalLoadedModels.set(url, gltf);
+                        const model = gltf.scene;
+
+                        model.position.set(position.x, position.y, position.z);
+                        model.scale.set(scale.x, scale.y, scale.z);
+                        model.rotation.set(rotation.x, rotation.y, rotation.z);
+
+                        model.traverse((child) => {
+                            if (child.isMesh && child.material) {
+                                if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                                    child.material.needsUpdate = true;
+                                    if (child.material.map && child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
+                                        child.material.color.setRGB(1, 1, 1);
+                                    }
+                                }
+                            }
+                        });
+
+                        this.scene.add(model);
+                        this.objects.push(model);
+                        this.setupDevUI(model);
+
+                        let mixer = null;
+                        if (gltf.animations && gltf.animations.length > 0) {
+                            mixer = new THREE.AnimationMixer(model);
+                            gltf.animations.forEach((clip) => {
+                                const action = mixer.clipAction(clip);
+                                action.loop = THREE.LoopPingPong;
+                                action.timeScale = 0.8;
+                                action.play();
+                            });
+                            this.animationMixers = this.animationMixers || [];
+                            this.animationMixers.push(mixer);
+                            console.log(`Loaded ${url} with ${gltf.animations.length} animations`);
+                        } else {
+                            console.log(`Loaded ${url} as static mesh`);
+                        }
+
+                        resolve({ model, mixer });
+                    },
+                    (progress) => {
+                        console.log(`Loading ${url}: ${(progress.loaded / progress.total * 100)}%`);
+                    },
+                    (error) => {
+                        console.error(`Error loading GLB ${url}:`, error);
+                        reject(error);
+                    }
+                );
+            }
         });
     }
 
     renderLoop() {
         requestAnimationFrame(() => this.renderLoop());
+
+        // Update animation mixers
+        const deltaTime = 1 / 60; // Assume 60fps for mixer updates
+        if (this.animationMixers) {
+            this.animationMixers.forEach(mixer => {
+                mixer.update(deltaTime);
+            });
+        }
+
         if (this.faceLandmarker && this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
             const startTimeMs = performance.now();
             const results = this.faceLandmarker.detectForVideo(this.video, startTimeMs);
             this.onResults(results);
         }
         this.updateCamera();
+
+        // Update dynamic effects (fireflies, energy pulses, etc.)
+        this.updateDynamicEffects();
 
         // Small pulse light effect for garden models
         const time = performance.now() * 0.001;
@@ -417,6 +418,274 @@ class Room {
         }
     }
 
+    setupSceneButtons() {
+        const buttons = document.querySelectorAll('.scene-btn');
+        buttons.forEach(button => {
+            button.addEventListener('click', () => {
+                const sceneNumber = parseInt(button.dataset.scene);
+                this.switchScene(sceneNumber);
+            });
+        });
+    }
+
+    generateRain(count) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const speeds = new Float32Array(count);
+
+        for (let i = 0; i < count; i++) {
+            positions[i * 3] = (Math.random() - 0.5) * 180; // X spread across room width
+            positions[i * 3 + 1] = 35 + Math.random() * 10; // Y start high in room
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 140; // Z depth
+            speeds[i] = 0.8 + Math.random() * 2.0; // Individual fall speeds
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+
+        // Rain material with cyan/blue color
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                lightningFlash: { value: 0 }
+            },
+            vertexShader: `
+                attribute float speed;
+                uniform float time;
+                uniform float lightningFlash;
+                varying float vLightning;
+
+                void main() {
+                    vLightning = lightningFlash;
+
+                    vec3 pos = position;
+                    // Rain falling effect - reset to top when hitting bottom
+                    pos.y = mod(pos.y - time * speed * 0.5, 70.0) - 35.0;
+
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = 2.0 + lightningFlash * 3.0; // Grow during lightning
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform float lightningFlash;
+                varying float vLightning;
+
+                void main() {
+                    vec2 c = gl_PointCoord - vec2(0.5);
+                    if (dot(c, c) > 0.25) discard;
+
+                    // Mix between cyan rain and white lightning
+                    vec3 rainColor = vec3(0.0, 1.0, 1.0); // Cyan
+                    vec3 lightningColor = vec3(1.0, 1.0, 1.0); // White
+                    vec3 finalColor = mix(rainColor, lightningColor, lightningFlash);
+
+                    gl_FragColor = vec4(finalColor, 0.8);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        const rain = new THREE.Points(geometry, material);
+        this.rainMaterial = material;
+        return rain;
+    }
+
+    triggerLightning() {
+        if (this.rainMaterial) {
+            // Flash effect
+            this.rainMaterial.uniforms.lightningFlash.value = 1.0;
+
+            // Fade out over time
+            const fadeOut = () => {
+                this.rainMaterial.uniforms.lightningFlash.value *= 0.95;
+                if (this.rainMaterial.uniforms.lightningFlash.value > 0.01) {
+                    requestAnimationFrame(fadeOut);
+                }
+            };
+            fadeOut();
+        }
+    }
+
+    async switchScene(sceneNumber) {
+        // Update UI
+        document.querySelectorAll('.scene-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-scene="${sceneNumber}"]`).classList.add('active');
+
+        // Unload current scene
+        if (this.currentSceneInstance) {
+            this.currentSceneInstance.unload();
+        }
+
+        // Clear animation mixers from previous scenes
+        if (this.animationMixers) {
+            this.animationMixers.length = 0; // Clear the array
+        }
+
+        // Stop any existing animations
+        if (this.rainAnimationId) {
+            cancelAnimationFrame(this.rainAnimationId);
+            this.rainAnimationId = null;
+        }
+
+        // Load new scene
+        this.currentScene = sceneNumber;
+        console.log(`Switching to Scene ${sceneNumber}`);
+
+        // Create and load the appropriate scene class
+        if (sceneNumber === 1) {
+            this.currentSceneInstance = new Scene1(this);
+            await this.currentSceneInstance.load();
+        } else if (sceneNumber === 2) {
+            this.currentSceneInstance = new Scene2(this);
+            await this.currentSceneInstance.load();
+        } else if (sceneNumber === 3) {
+            this.currentSceneInstance = new Scene3(this);
+            await this.currentSceneInstance.load();
+        } else if (sceneNumber === 4) {
+            this.currentSceneInstance = new Scene4(this);
+            await this.currentSceneInstance.load();
+        }
+    }
+
+
+
+    // Dynamic Effects for Living Digital World
+    generateFireflies(count) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+            // Distribute fireflies throughout the room volume
+            positions[i * 3] = (Math.random() - 0.5) * 160; // X: room width
+            positions[i * 3 + 1] = Math.random() * 35 + 5; // Y: floor to ceiling
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 120; // Z: room depth
+
+            // Warm golden/yellow colors
+            colors[i * 3] = 1.0;     // R
+            colors[i * 3 + 1] = 0.8 + Math.random() * 0.2; // G (vary brightness)
+            colors[i * 3 + 2] = 0.2; // B
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                cameraPosition: { value: new THREE.Vector3() }
+            },
+            vertexShader: `
+                attribute vec3 color;
+                uniform float time;
+                uniform vec3 cameraPosition;
+                varying vec3 vColor;
+                varying float vDistanceToCamera;
+
+                void main() {
+                    vColor = color;
+
+                    vec3 pos = position;
+
+                    // Slow drifting motion in lazy circles
+                    pos.x += sin(time * 0.5 + position.x * 0.01) * 0.5;
+                    pos.y += cos(time * 0.3 + position.y * 0.01) * 0.3;
+                    pos.z += sin(time * 0.2 + position.z * 0.01) * 0.4;
+
+                    // Calculate distance to camera for interaction glow
+                    vDistanceToCamera = distance(pos, cameraPosition);
+
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = 3.0 + sin(time * 2.0 + position.x) * 1.0; // Gentle flickering
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                varying float vDistanceToCamera;
+
+                void main() {
+                    vec2 c = gl_PointCoord - vec2(0.5);
+                    if (dot(c, c) > 0.25) discard;
+
+                    vec3 finalColor = vColor;
+
+                    // Camera interaction glow - points near camera turn cyan
+                    if (vDistanceToCamera < 15.0) {
+                        float glowFactor = 1.0 - (vDistanceToCamera / 15.0);
+                        finalColor = mix(finalColor, vec3(0.0, 1.0, 1.0), glowFactor * 0.7);
+                    }
+
+                    gl_FragColor = vec4(finalColor, 0.8);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            vertexColors: true
+        });
+
+        const fireflies = new THREE.Points(geometry, material);
+        this.fireflyGeometry = geometry;
+        this.fireflyMaterial = material;
+        return fireflies;
+    }
+
+    triggerEnergyPulse() {
+        console.log('🌊 Energy Pulse triggered!');
+        this.pulseRadius = 0;
+
+        // Update all garden materials with pulse effect
+        this.objects.forEach(obj => {
+            if (obj && obj.traverse) {
+                obj.traverse((child) => {
+                    if (child.isPoints && child.material && child.material.uniforms) {
+                        // Add pulse uniform if it doesn't exist
+                        if (!child.material.uniforms.uPulseRadius) {
+                            child.material.uniforms.uPulseRadius = { value: 0 };
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    updateDynamicEffects() {
+        this.globalTime += 0.016; // ~60fps
+
+        // Update fireflies
+        if (this.fireflyMaterial) {
+            this.fireflyMaterial.uniforms.time.value = this.globalTime;
+            this.fireflyMaterial.uniforms.cameraPosition.value.copy(this.camera.position);
+        }
+
+        // Update energy pulse
+        if (this.pulseRadius < 150) {
+            this.pulseRadius += 1.2; // Pulse expansion speed
+
+            // Apply pulse to all garden objects
+            this.objects.forEach(obj => {
+                if (obj && obj.traverse) {
+                    obj.traverse((child) => {
+                        if (child.isPoints && child.material && child.material.uniforms && child.material.uniforms.uPulseRadius) {
+                            child.material.uniforms.uPulseRadius.value = this.pulseRadius;
+                        }
+                    });
+                }
+            });
+        }
+
+        // Random pulse triggers (every 15-30 seconds)
+        if (Math.random() < 0.001 && this.currentScene === 2) { // Only in garden scene
+            this.triggerEnergyPulse();
+        }
+    }
+
     createBorderTexture() {
         const canvas = document.createElement('canvas');
         canvas.width = 256;
@@ -450,4 +719,3 @@ class Room {
 // Export for use in other files
 console.log("exporting room")
 window.Room = Room;
-// Export for use in other files

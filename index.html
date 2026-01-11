@@ -24,10 +24,41 @@
             position: relative;
         }
 
+        /* Scene Buttons - Top Left */
+        #scene-buttons {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+
+        .scene-btn {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 8px 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .scene-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .scene-btn.active {
+            background: rgba(0, 255, 0, 0.3);
+            box-shadow: 0 0 15px #00ff00;
+        }
+
         /* System Status - Top Left */
         #system-status {
             position: absolute;
-            top: 20px;
+            top: 70px;
             left: 20px;
             background: rgba(0, 0, 0, 0.8);
             border: 1px solid #00ff00;
@@ -125,6 +156,14 @@
         <p style="font-size: 10px; margin-top: 5px; color: #aaa;">Press 'H' to toggle UI</p>
     </div>
 
+    <!-- Scene Buttons -->
+    <div id="scene-buttons">
+        <button class="scene-btn active" data-scene="1">SCENE 1</button>
+        <button class="scene-btn" data-scene="2">SCENE 2</button>
+        <button class="scene-btn" data-scene="3">SCENE 3</button>
+        <button class="scene-btn" data-scene="4">SCENE 4</button>
+    </div>
+
     <div id="container">
 
     <!-- Calibration Overlay -->
@@ -186,6 +225,10 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/BokehPass.js"></script>
 
     <script src="garden.js"></script>
+    <script src="Scene1.js"></script>
+    <script src="Scene2.js"></script>
+    <script src="Scene3.js"></script>
+    <script src="Scene4.js"></script>
     <script type="module" src="room.js"></script>
     <script>
         // Initialize the room display system
@@ -193,8 +236,8 @@
             const room = new Room();
             await room.init('container');
 
-            // Create hybrid garden with procedural + GLB models
-            room.initHybridGarden();
+            // Start with Scene 1 (empty room) - user can switch scenes with buttons
+            console.log('Room initialized. Use scene buttons to switch between scenes.');
         });
     </script>
 </body>
