@@ -11,9 +11,14 @@ class Scene4 {
     async load() {
 
 
-        const { model: flowerObject, mixer } = await this.room.loadGLBNormal('effects/molecular_render_looping_fbx.glb',
+        //const { model: flowerObject, mixer } = await this.room.loadGLBNormal('effects/molecular_render_looping_fbx.glb',
+        //    {x: 0, y: 0, z: -50}, // Center of room
+        //    {x: 70.5, y: 70.5, z: 70.5}, // Larger scale for visibility
+        //    {x: 0, y: 0, z: 0}
+        //);
+        const { model: flowerObject, mixer } = await this.room.loadGLBNormal('effects/need_some_space.glb',
             {x: 0, y: 0, z: -50}, // Center of room
-            {x: 100, y: 100, z: 100}, // Larger scale for visibility
+            {x: 70.5, y: 70.5, z: 70.5}, // Larger scale for visibility
             {x: 0, y: 0, z: 0}
         );
         this.objects.push(flowerObject);

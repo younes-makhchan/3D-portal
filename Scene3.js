@@ -12,9 +12,9 @@ class Scene3 {
         console.log('Scene 3: Animated flower scene loading...');
 
         // Load animated flower as normal mesh with animations
-        const { model: flowerObject, mixer } = await this.room.loadGLBNormal('effects/simple_flower_loop.glb',
+        const { model: flowerObject, mixer } = await this.room.loadGLBNormal('effects/stylized_airplane_-_the_flying_circus_diorama.glb',
             {x: 0, y: 0, z: -50}, // Center of room
-            {x: 5, y: 5, z: 5}, // Larger scale for visibility
+            {x: 0.7, y: 0.7, z: 0.7}, // Larger scale for visibility
             {x: 0, y: 0, z: 0}
         ); 
 
@@ -24,6 +24,9 @@ class Scene3 {
         if (mixer) {
             this.animationMixers.push(mixer);
         }
+
+        // Start flower rotation animation
+        this.startFlowerRotation(flowerObject);
 
         // Enhance bloom for dramatic effect
         if (this.room.composer && this.room.composer.passes[1]) {
@@ -69,6 +72,52 @@ class Scene3 {
             }, delay);
         };
         scheduleLightning();
+    }
+
+    startFlowerRotation(model) {
+        const flower = model; // The flower object
+        let angle = 0;
+        const targetAngle = 1.3; // Small rotation amount
+        const speed = 0.016; // Rotation speed
+
+        // Phase 1: Rotate to target
+        const rotateToTarget = () => {
+            const animate = () => {
+                angle += speed;
+                flower.rotation.y = angle;
+                flower.position.z -= angle*0.2;
+                if (angle >= targetAngle) {
+                    // Reached target, wait 2 seconds then go back
+                    setTimeout(rotateBack, 1000);
+                } else if (this.room.currentScene === 3) {
+                    requestAnimationFrame(animate);
+                }
+            };
+            animate();
+        };
+
+        // Phase 2: Rotate back to original
+        const rotateBack = () => {
+            const animate = () => {
+                angle -= speed;
+                flower.rotation.y = angle;
+                flower.position.z += angle*0.2;
+
+
+                if (angle <= 0) {
+                    // Stop when back to original state
+                    return;
+                }
+
+                if (this.room.currentScene === 3) {
+                    requestAnimationFrame(animate);
+                }
+            };
+            animate();
+        };
+
+        // Start the rotation
+        rotateToTarget();
     }
 
     unload() {

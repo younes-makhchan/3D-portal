@@ -60,6 +60,14 @@ class Room {
         this.fireflyGeometry = null;
         this.fireflyMaterial = null;
         this.globalTime = 0;
+
+        // Clap detection
+        this.audioContext = null;
+        this.analyser = null;
+        this.microphone = null;
+        this.clapThreshold = 0.2;
+        this.lastClapTime = 0;
+        this.clapCooldown = 500;
     }
 
 
@@ -147,6 +155,7 @@ class Room {
 
         this.video = document.getElementById('webcam');
        await this.setupTracking();
+       await this.setupClapDetection();
 
         // Build the Room
         this.buildRoom();
@@ -254,16 +263,7 @@ class Room {
                 model.rotation.set(rotation.x, rotation.y, rotation.z);
 
                 // Ensure materials work properly with lighting
-                model.traverse((child) => {
-                    if (child.isMesh && child.material) {
-                        if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
-                            child.material.needsUpdate = true;
-                            if (child.material.map && child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
-                                child.material.color.setRGB(1, 1, 1);
-                            }
-                        }
-                    }
-                });
+               
 
                 this.scene.add(model);
                 this.objects.push(model);
@@ -275,7 +275,7 @@ class Room {
                     cached.animations.forEach((clip) => {
                         const action = mixer.clipAction(clip);
                         action.loop = THREE.LoopPingPong;
-                        action.timeScale = 0.8;
+                        action.timeScale = 1;
                         action.play();
                     });
                     this.animationMixers = this.animationMixers || [];
@@ -364,6 +364,9 @@ class Room {
         // Update dynamic effects (fireflies, energy pulses, etc.)
         this.updateDynamicEffects();
 
+        // Check for clap detection
+        //this.checkForClap();
+
         // Small pulse light effect for garden models
         const time = performance.now() * 0.001;
         this.pointLight.intensity = 2.0 + Math.sin(time * 2) * 0.2;
@@ -415,6 +418,46 @@ class Room {
 
             this.eyePosition.x += ((0.5 - normX) * this.monitorWidth * this.config.tracking.sensitivity - this.eyePosition.x) * this.config.motion.smoothing;
             this.eyePosition.y += ((0.5 - normY) * this.monitorHeight * this.config.tracking.sensitivity - this.eyePosition.y) * this.config.motion.smoothing;
+        }
+    }
+
+    async setupClapDetection() {
+        try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.analyser = this.audioContext.createAnalyser();
+            this.microphone = this.audioContext.createMediaStreamSource(audioStream);
+            this.microphone.connect(this.analyser);
+            this.analyser.fftSize = 256;
+            console.log("Clap Detection Initialized");
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+        }
+    }
+
+    checkForClap() {
+        if (!this.analyser) return;
+
+        const bufferLength = this.analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        this.analyser.getByteFrequencyData(dataArray);
+
+        // Calculate average volume
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+        }
+        const average = sum / bufferLength / 255; // normalize 0-1
+        if(average>0.1){
+            console.log("average",average)
+
+        }
+        const now = Date.now();
+        if (average > this.clapThreshold && (now - this.lastClapTime) > this.clapCooldown) {
+            this.lastClapTime = now;
+            console.log('Clap detected! Switching scene.');
+            const nextScene = (this.currentScene % 4) + 1;
+            this.switchScene(nextScene);
         }
     }
 
