@@ -438,7 +438,7 @@ window.Garden = class Garden {
                                         if (dot(c, c) > 0.25) discard;
                                         vec4 texColor = texture2D(map, vUv);
                                         if (texColor.a < 0.1) discard;
-                                        gl_FragColor = texColor * 1.6;
+                                        gl_FragColor = texColor * 1.7;
                                     }
                                 `,
                                 transparent: true,
@@ -556,9 +556,9 @@ window.Garden = class Garden {
             garden.add(pinkBush1);
             const pinkBush2 = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: 0, y: -13, z: -36}, {x: 10, y: 10, z: 10});
             garden.add(pinkBush2);  
-            const pinkBush = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: 20, y: -13, z: -30}, {x: 10, y: 10, z: 10});
+            const pinkBush = await this.loadGLBModel('http://localhost:8000/pink_bush.glb', {x: 20, y: -13, z: -30}, {x: 10, y: 10, z: 10},{x: 0.0, y: 0, z: 0},0.03,3000.0);
             garden.add(pinkBush);
-            const desertBush = await this.loadGLBModel('http://localhost:8000/desert_bush.glb', {x: 18, y: -7, z: -36}, {x: 8, y: 8, z: 8},{x: 0.0, y: 0, z: 0},0.02,2000.0);
+            const desertBush = await this.loadGLBModel('http://localhost:8000/desert_bush.glb', {x: 18, y: -7, z: -36}, {x: 8, y: 8, z: 8},{x: 0.0, y: 0, z: 0},0.03,3000.0);
             garden.add(desertBush);
             const tallBush = await this.loadGLBModel('http://localhost:8000/tall_bush.glb', {x: 25, y: -10, z: -27}, {x: 20, y: 20, z: 20},{x: 0.0, y: 10, z: 0},0.03,2000.0);
             garden.add(tallBush);

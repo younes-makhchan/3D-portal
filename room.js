@@ -112,6 +112,9 @@ class Room {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
 
+        // Add depth fog for enhanced camera-like depth perception
+        this.scene.fog = new THREE.FogExp2(0x000000, 0.015);
+
         // Camera Setup
         this.camera = new THREE.PerspectiveCamera(this.config.camera.fov, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, 0, this.config.camera.initialZ);
@@ -145,6 +148,14 @@ class Room {
             0.8  // Threshold to focus bloom on bright areas
         );
         this.composer.addPass(bloomPass);
+
+        // Add Depth-of-Field (DoF) blur for camera-like depth effect
+        const bokehPass = new THREE.BokehPass(this.scene, this.camera, {
+            focus: 1000.0,     // Distance from camera that stays sharp (garden depth)
+            aperture: 0.0008, // Controls blur amount - subtle but noticeable
+            maxblur: 0.0015    // Maximum blur radius
+        });
+        this.composer.addPass(bokehPass);
 
         // Lighting
         this.pointLight = new THREE.PointLight(0xffffff, 2.0, 500);
